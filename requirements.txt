@@ -1,0 +1,3 @@
+homeharvest>=0.8,<0.9
+pandas
+pyyaml

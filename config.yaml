@@ -1,0 +1,27 @@
+# Counties to track. Every town in each county is included.
+# Format must match Realtor.com search: "<Name> County, NJ"
+counties:
+  - Morris
+  - Somerset
+  - Union
+  - Essex
+  - Bergen
+  - Middlesex
+  - Monmouth
+  - Hunterdon
+  - Passaic
+  - Mercer
+
+state: NJ
+
+# How far back to pull sold homes (days)
+sold_days: 180
+
+# A listing counts as "New" if listed within this many days
+new_days: 7
+
+# Max photos kept per home (detail view)
+max_photos: 15
+
+# Daily events ("what changed" feed) are kept this many days
+event_days: 30

@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NJ Home Tracker</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/MarkerCluster.Default.min.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <h1>NJ Home Tracker</h1>
+      <span class="muted" id="updated">Loading…</span>
+    </div>
+    <div class="top-actions">
+      <button class="icon-btn" id="filtersToggle" aria-label="Show filters">Filters</button>
+      <button class="icon-btn" id="themeToggle" aria-label="Toggle dark mode">◐</button>
+    </div>
+  </header>
+
+  <div id="sampleBanner" class="banner" hidden>
+    Showing <b>sample data</b>. Real listings appear after the first daily GitHub Action run.
+  </div>
+
+  <section class="kpis" id="kpis"></section>
+
+  <nav class="tabs" role="tablist">
+    <button role="tab" data-view="houses" class="active">Houses</button>
+    <button role="tab" data-view="towns">Towns</button>
+    <button role="tab" data-view="map">Map</button>
+    <button role="tab" data-view="market">Market</button>
+    <button role="tab" data-view="changes">What changed</button>
+  </nav>
+
+  <div class="layout">
+    <aside class="filters" id="filters">
+      <div class="filters-head">
+        <h2>Filters</h2>
+        <button class="link" id="resetFilters">Reset</button>
+      </div>
+
+      <label class="field">Status</label>
+      <div class="chips" id="statusChips">
+        <button data-st="all">All</button>
+        <button data-st="new">New</button>
+        <button data-st="A">Available</button>
+        <button data-st="P">Under contract</button>
+        <button data-st="S">Sold</button>
+      </div>
+
+      <label class="field" for="townSearch">Towns <span class="muted" id="townCount"></span></label>
+      <input type="search" id="townSearch" placeholder="Search towns…">
+      <div class="town-list" id="townList"></div>
+      <button class="link" id="clearTowns">Clear towns</button>
+
+      <label class="field">School score (1–10)</label>
+      <div class="range">
+        <input type="number" id="scMin" min="1" max="10" placeholder="Min">
+        <span>–</span>
+        <input type="number" id="scMax" min="1" max="10" placeholder="Max">
+      </div>
+      <label class="check"><input type="checkbox" id="scKeepUnknown" checked> Include towns with no score</label>
+
+      <label class="field">List price</label>
+      <div class="range">
+        <input type="number" id="lpMin" step="25000" placeholder="Min $">
+        <span>–</span>
+        <input type="number" id="lpMax" step="25000" placeholder="Max $">
+      </div>
+
+      <label class="field">Sold price</label>
+      <div class="range">
+        <input type="number" id="spMin" step="25000" placeholder="Min $">
+        <span>–</span>
+        <input type="number" id="spMax" step="25000" placeholder="Max $">
+      </div>
+
+      <label class="field" for="sdFrom">Sold on or after</label>
+      <input type="date" id="sdFrom">
+
+      <div class="grid2">
+        <div>
+          <label class="field" for="bedsMin">Beds</label>
+          <select id="bedsMin"><option value="">Any</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select>
+        </div>
+        <div>
+          <label class="field" for="bathsMin">Baths</label>
+          <select id="bathsMin"><option value="">Any</option><option>1</option><option>1.5</option><option>2</option><option>2.5</option><option>3</option><option>4</option></select>
+        </div>
+      </div>
+
+      <div class="grid2">
+        <div>
+          <label class="field" for="sqftMin">Min sqft</label>
+          <input type="number" id="sqftMin" step="250" placeholder="Any">
+        </div>
+        <div>
+          <label class="field" for="domMax">Max days on mkt</label>
+          <input type="number" id="domMax" placeholder="Any">
+        </div>
+      </div>
+
+      <label class="field" for="typeSel">Property type</label>
+      <select id="typeSel"><option value="">Any</option></select>
+    </aside>
+
+    <main>
+      <!-- Houses -->
+      <section class="view" id="view-houses">
+        <div class="toolbar">
+          <span id="resultCount" class="muted"></span>
+          <div class="toolbar-right">
+            <select id="sortSel" aria-label="Sort">
+              <option value="recent">Newest activity</option>
+              <option value="lp-asc">List price ↑</option>
+              <option value="lp-desc">List price ↓</option>
+              <option value="sp-desc">Sold price ↓</option>
+              <option value="sd-desc">Sold date (recent)</option>
+              <option value="sc-desc">School score ↓</option>
+              <option value="dom-asc">Days on market ↑</option>
+              <option value="ppsf-asc">$/sqft ↑</option>
+            </select>
+            <div class="seg">
+              <button data-mode="grid" class="active">Cards</button>
+              <button data-mode="table">Table</button>
+            </div>
+          </div>
+        </div>
+        <div id="houseGrid" class="cards"></div>
+        <div id="houseTable" class="table-wrap" hidden></div>
+        <button id="loadMore" class="btn" hidden>Show more</button>
+      </section>
+
+      <!-- Towns -->
+      <section class="view" id="view-towns" hidden>
+        <div class="toolbar"><span class="muted">Click a town to filter its homes. Stats use your current filters, except town.</span></div>
+        <div id="townTable" class="table-wrap"></div>
+      </section>
+
+      <!-- Map -->
+      <section class="view" id="view-map" hidden>
+        <div class="legend" id="mapLegend"></div>
+        <div id="map"></div>
+      </section>
+
+      <!-- Market -->
+      <section class="view" id="view-market" hidden>
+        <div class="chart-card">
+          <h3>Median sold price by month</h3>
+          <p class="muted small">Homes sold matching your filters</p>
+          <div class="chart-box"><canvas id="chartMonthly"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <h3>Homes sold per month</h3>
+          <div class="chart-box short"><canvas id="chartVolume"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <h3>Median list price by town</h3>
+          <p class="muted small">Available homes, top 25 towns by listing count</p>
+          <div class="chart-box tall"><canvas id="chartTowns"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <h3>Market trend</h3>
+          <p class="muted small">Daily snapshots of available and under-contract counts. This chart fills in as the tracker runs each day.</p>
+          <div class="chart-box short"><canvas id="chartTrend"></canvas></div>
+        </div>
+      </section>
+
+      <!-- Changes -->
+      <section class="view" id="view-changes" hidden>
+        <div class="chips" id="changeChips">
+          <button data-ct="all" class="active">All</button>
+          <button data-ct="new">New listings</button>
+          <button data-ct="pending">Went under contract</button>
+          <button data-ct="sold">Sold</button>
+          <button data-ct="price">Price changes</button>
+          <button data-ct="back">Back on market</button>
+        </div>
+        <div id="changeFeed"></div>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="detail" aria-label="Home details">
+    <div class="detail-body" id="detailBody"></div>
+  </dialog>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,95 @@
+name: Update listings
+
+on:
+  schedule:
+    - cron: "0 11 * * *"   # daily, 6am EST / 7am EDT
+  workflow_dispatch:
+    inputs:
+      county:
+        description: "Only fetch this county (blank = all, for testing)"
+        required: false
+  push:
+    branches: [main]
+    paths: ["site/**"]     # site code change: redeploy with the latest data, no fetch
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: update
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      # Running state + last published data live on an orphan `data` branch (one commit, force-pushed)
+      - name: Get saved state
+        run: |
+          mkdir -p state
+          if git ls-remote --exit-code --heads origin data >/dev/null; then
+            git fetch --depth 1 origin data
+            git archive FETCH_HEAD | tar -x -C state
+          fi
+
+      - uses: actions/setup-python@v5
+        if: github.event_name != 'push'
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Fetch listings
+        if: github.event_name != 'push'
+        env:
+          COUNTY: ${{ inputs.county }}
+        run: |
+          pip install -r requirements.txt
+          if [ -f state/today.json ]; then cp state/today.json state/prev.json; fi
+          if [ -n "$COUNTY" ]; then
+            python scripts/fetch.py --out state/today.json --prev state/prev.json --county "$COUNTY"
+          else
+            python scripts/fetch.py --out state/today.json --prev state/prev.json
+          fi
+
+      - name: Build dashboard data
+        if: github.event_name != 'push'
+        run: |
+          python scripts/build.py --today state/today.json --state state --out site/data
+          rm -rf state/site_data && cp -r site/data state/site_data
+
+      - name: Use last published data
+        if: github.event_name == 'push'
+        run: |
+          [ -d state/site_data ] && cp -r state/site_data/. site/data/ || echo "No data yet; deploying sample data"
+
+      - name: Save state to data branch
+        if: github.event_name != 'push'
+        run: |
+          rm -f state/prev.json
+          tmp=$(mktemp -d) && cp -r state/. "$tmp" && cd "$tmp"
+          git init -q -b data
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Data $(date -u +%F)"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" HEAD:refs/heads/data
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

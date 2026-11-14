@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.venv/
+state/
+data/raw/
+*.xlsx
+node_modules/

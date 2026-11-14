@@ -24,9 +24,18 @@ GitHub Action (daily 11:00 UTC, about 6am ET)
    git remote add origin https://github.com/<you>/nj-home-tracker.git
    git push -u origin main
    ```
-3. In the repo, go to **Settings → Pages → Build and deployment → Source** and choose **GitHub Actions**.
-4. Go to **Actions → Update listings → Run workflow**. For a quick first test, enter `Morris` in the county box. Then run it again with the box blank to fetch every county (this takes about 20–60 minutes).
-5. Your dashboard is at `https://<you>.github.io/nj-home-tracker/`. After that it updates itself every morning.
+3. Add the site password: **Settings → Secrets and variables → Actions → New repository secret**. Name it `SITE_PASSWORD` and set the value to a long passphrase. The workflow won't publish anything without it.
+4. In the repo, go to **Settings → Pages → Build and deployment → Source** and choose **GitHub Actions**.
+5. Go to **Actions → Update listings → Run workflow**. For a quick first test, enter `Morris` in the county box. Then run it again with the box blank to fetch every county (this takes about 20–60 minutes).
+6. Your dashboard is at `https://<you>.github.io/nj-home-tracker/`. After that it updates itself every morning.
+
+## Password protection
+
+All listing data the site serves is gzipped and encrypted with AES-256-GCM. The key is derived from `SITE_PASSWORD` with PBKDF2 (600,000 iterations). The page asks for the password and decrypts in the browser. The saved state on the `data` branch is encrypted the same way. The page code itself is public; the data isn't readable without the password.
+
+- **Strong passphrase:** anyone can download the encrypted files and try passwords offline, so use something long, like four or five random words.
+- **"Remember on this device"** keeps the key in that browser. Click **Lock** to forget it.
+- **Changing the password:** update the secret, delete the `data` branch (the old encrypted state can't be read with the new password), then run the workflow.
 
 ## Customizing
 

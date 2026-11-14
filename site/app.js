@@ -53,10 +53,76 @@
   const fullAddr = (h) => [h.addr, h.unit && `Unit ${h.unit}`].filter(Boolean).join(' ');
 
   // ------------------------------------------------------------ data
+  // Data files are AES-GCM encrypted (scripts/vault.py) when data/crypto.json exists.
+  let KEY = null;
+  const KEY_STORE = 'njKey';
+  const CHECK = 'nj-home-tracker';
+  const b64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+  const toB64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)));
+
+  async function decryptText(key, bytes) {
+    const u = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+    const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: u.slice(0, 12) }, key, u.slice(12));
+    const stream = new Blob([plain]).stream().pipeThrough(new DecompressionStream('gzip'));
+    return new Response(stream).text();
+  }
+
+  async function deriveKey(password, meta) {
+    const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey']);
+    return crypto.subtle.deriveKey(
+      { name: 'PBKDF2', salt: b64(meta.salt), iterations: meta.iter, hash: 'SHA-256' },
+      base, { name: 'AES-GCM', length: 256 }, true, ['decrypt']);
+  }
+
+  async function keyWorks(key, meta) {
+    try { return (await decryptText(key, b64(meta.check))) === CHECK; } catch { return false; }
+  }
+
+  async function unlock(meta) {
+    try {
+      const saved = JSON.parse(localStorage.getItem(KEY_STORE) || 'null');
+      if (saved && saved.salt === meta.salt) {
+        const key = await crypto.subtle.importKey('raw', b64(saved.key), 'AES-GCM', true, ['decrypt']);
+        if (await keyWorks(key, meta)) return key;
+      }
+    } catch { /* storage unavailable or stale key */ }
+
+    document.body.classList.add('locked');
+    $('#lock').hidden = false;
+    $('#lockPw').focus();
+    return new Promise((resolve) => {
+      $('#lockForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const btn = $('#lockForm button');
+        btn.disabled = true;
+        btn.textContent = 'Unlocking…';
+        $('#lockErr').hidden = true;
+        const key = await deriveKey($('#lockPw').value, meta);
+        if (await keyWorks(key, meta)) {
+          if ($('#lockRemember').checked) {
+            try {
+              const raw = await crypto.subtle.exportKey('raw', key);
+              localStorage.setItem(KEY_STORE, JSON.stringify({ salt: meta.salt, key: toB64(raw) }));
+            } catch { /* ignore */ }
+          }
+          $('#lock').hidden = true;
+          document.body.classList.remove('locked');
+          resolve(key);
+        } else {
+          $('#lockErr').hidden = false;
+          $('#lockPw').select();
+        }
+        btn.disabled = false;
+        btn.textContent = 'Unlock';
+      });
+    });
+  }
+
   async function getJSON(path, fallback) {
     try {
-      const r = await fetch(path, { cache: 'no-cache' });
+      const r = await fetch(KEY ? path.replace(/\.json$/, '.bin') : path, { cache: 'no-cache' });
       if (!r.ok) throw new Error(r.status);
+      if (KEY) return JSON.parse(await decryptText(KEY, await r.arrayBuffer()));
       return await r.json();
     } catch (e) {
       console.warn('Could not load', path, e);
@@ -66,6 +132,15 @@
 
   async function init() {
     applyStoredTheme();
+    let cryptoMeta = null;
+    try {
+      const r = await fetch('data/crypto.json', { cache: 'no-cache' });
+      if (r.ok) cryptoMeta = await r.json();
+    } catch { /* not encrypted (local preview / sample data) */ }
+    if (cryptoMeta) {
+      KEY = await unlock(cryptoMeta);
+      $('#lockBtn').hidden = false;
+    }
     const [homes, towns, changes, history, meta] = await Promise.all([
       getJSON('data/listings.json', []), getJSON('data/towns.json', []), getJSON('data/changes.json', []),
       getJSON('data/history.json', []), getJSON('data/meta.json', {}),
@@ -216,6 +291,10 @@
     $('#loadMore').addEventListener('click', () => { S.shown += PAGE; renderHouses(); });
     $('#filtersToggle').addEventListener('click', () => $('#filters').classList.toggle('open'));
     $('#themeToggle').addEventListener('click', toggleTheme);
+    $('#lockBtn').addEventListener('click', () => {
+      try { localStorage.removeItem(KEY_STORE); } catch { /* ignore */ }
+      location.reload();
+    });
     $('#kpis').addEventListener('click', (e) => {
       const k = e.target.closest('.kpi[data-st]');
       if (!k) return;

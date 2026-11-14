@@ -1,6 +1,13 @@
 {
   "version": "0.0.1",
   "configurations": [
-    { "name": "site", "runtimeExecutable": "node", "runtimeArgs": ["scripts/serve.mjs", "5173"], "port": 5173 }
+    { "name": "site", "runtimeExecutable": "node", "runtimeArgs": ["scripts/serve.mjs", "5173"], "port": 5173 },
+    {
+      "name": "site-encrypted-test",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["scripts/serve.mjs", "5180"],
+      "port": 5180,
+      "env": { "SITE_DIR": "C:/Users/ajb24/AppData/Local/Temp/claude/C--Users-ajb24--claude-spares-spare-bk29ON/46eccc0d-4c69-4831-a05b-2f2ac473d001/scratchpad/site_enc" }
+    }
   ]
 }

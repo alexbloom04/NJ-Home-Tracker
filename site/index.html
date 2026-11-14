@@ -18,8 +18,20 @@
     <div class="top-actions">
       <button class="icon-btn" id="filtersToggle" aria-label="Show filters">Filters</button>
       <button class="icon-btn" id="themeToggle" aria-label="Toggle dark mode">◐</button>
+      <button class="icon-btn" id="lockBtn" hidden title="Lock and forget the password on this device">Lock</button>
     </div>
   </header>
+
+  <div id="lock" class="lock" hidden>
+    <form id="lockForm" class="lock-card">
+      <h1>NJ Home Tracker</h1>
+      <p class="muted">Enter the password to view the dashboard.</p>
+      <input type="password" id="lockPw" autocomplete="current-password" aria-label="Password" placeholder="Password" required>
+      <label class="check"><input type="checkbox" id="lockRemember" checked> Remember on this device</label>
+      <button class="btn primary" type="submit">Unlock</button>
+      <p id="lockErr" class="lock-err" hidden>That password didn't work.</p>
+    </form>
+  </div>
 
   <div id="sampleBanner" class="banner" hidden>
     Showing <b>sample data</b>. Real listings appear after the first daily GitHub Action run.

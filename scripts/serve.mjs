@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { extname, join, normalize, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const SITE = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'site');
+const SITE = process.env.SITE_DIR ? resolve(process.env.SITE_DIR) : resolve(dirname(fileURLToPath(import.meta.url)), '..', 'site');
 const PORT = +process.env.PORT || +process.argv[2] || 5173;
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png' };
 

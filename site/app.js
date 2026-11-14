@@ -50,6 +50,10 @@
   const slug = (s) => (s || 'unknown').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'unknown';
   const activity = (h) => (h.st === 'S' ? h.sd : h.st === 'P' ? h.pd || h.fs : h.ld || h.fs) || '';
   const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  // Listing data comes from a third party: only allow https (and inline sample data:image) URLs,
+  // and percent-encode characters that could break out of a CSS url("...") or an HTML attribute.
+  const safeUrl = (u) => (typeof u === 'string' && /^(https:\/\/|data:image\/)/i.test(u.trim()) ? u.trim() : null);
+  const cssUrl = (u) => (safeUrl(u) ? `background-image:url("${safeUrl(u).replace(/["'()\\\s<>]/g, (c) => '%' + c.charCodeAt(0).toString(16).padStart(2, '0').toUpperCase())}")` : '');
   const fullAddr = (h) => [h.addr, h.unit && `Unit ${h.unit}`].filter(Boolean).join(' ');
 
   // ------------------------------------------------------------ data
@@ -146,7 +150,8 @@
       getJSON('data/history.json', []), getJSON('data/meta.json', {}),
     ]);
     Object.assign(S, { homes, towns, changes, history, meta });
-    homes.forEach((h) => S.byId.set(h.id, h));
+    homes.forEach((h) => { h.img = safeUrl(h.img); S.byId.set(h.id, h); });
+    changes.forEach((e) => { e.img = safeUrl(e.img); });
     S.townInfo = new Map(towns.map((t) => [`${t.town}|${t.county}`, t]));
 
     $('#updated').textContent = meta.updated
@@ -400,7 +405,7 @@
         : `Listed ${date(h.ld || h.fs)}`;
     return `
       <article class="card" data-id="${esc(h.id)}">
-        <div class="photo" style="${h.img ? `background-image:url('${esc(h.img)}')` : ''}">
+        <div class="photo" style="${cssUrl(h.img)}">
           ${h.img ? '' : '<div class="no-photo">No photo</div>'}
           <div class="badges">${statusBadge(h)}${h.new ? '<span class="badge new">NEW</span>' : ''}${h.drop ? `<span class="badge drop">▼ ${shortMoney(h.drop)}</span>` : ''}</div>
         </div>
@@ -667,7 +672,7 @@
       else if (e.type === 'price') what += `: ${shortMoney(e.old)} → ${shortMoney(e.lp)}`;
       else what += ` · ${money(e.lp)}`;
       html += `<div class="change" ${h ? `data-id="${esc(e.id)}"` : ''}>
-        <div class="thumb" style="${e.img ? `background-image:url('${esc(e.img)}')` : ''}"></div>
+        <div class="thumb" style="${cssUrl(e.img)}"></div>
         <div><div class="what">${what}</div><div class="where">${esc(e.addr)}, ${esc(e.city)}</div></div>
       </div>`;
     });
@@ -685,7 +690,7 @@
     const s = slug(h.city);
     if (!S.details[s]) S.details[s] = await getJSON(`data/details/${s}.json`, {});
     const d = S.details[s][id] || {};
-    const photos = d.photos?.length ? d.photos : h.img ? [h.img] : [];
+    const photos = (d.photos?.length ? d.photos : [h.img]).map(safeUrl).filter(Boolean);
     let idx = 0;
     const stat = (k, v) => (v == null || v === '' || v === '—' ? '' : `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div></div>`);
     const tl = h.st === 'S' && h.sp && h.lp ? ((h.sp / h.lp) * 100).toFixed(1) + '%' : null;
@@ -732,7 +737,7 @@
         ${d.desc ? `<h3>About this home</h3><p class="desc">${esc(d.desc)}</p>` : ''}
         ${d.ph?.length > 1 ? `<h3>List price history</h3><ul class="ph-list">${d.ph.map(([dt, p]) => `<li>${date(dt)}: ${money(p)}</li>`).join('')}</ul>` : ''}
         ${d.schools_near ? `<p class="muted small">Nearby schools: ${esc(d.schools_near)}</p>` : ''}
-        ${d.url ? `<a class="ext" href="${esc(d.url)}" target="_blank" rel="noopener">View full listing on Realtor.com ↗</a>` : ''}
+        ${safeUrl(d.url) ? `<a class="ext" href="${esc(safeUrl(d.url))}" target="_blank" rel="noopener">View full listing on Realtor.com ↗</a>` : ''}
       </div>`;
     const show = (i) => {
       idx = (i + photos.length) % photos.length;

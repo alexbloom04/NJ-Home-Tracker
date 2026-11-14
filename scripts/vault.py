@@ -84,8 +84,12 @@ def pack(state_dir, out_file, salt_file):
             tar.add(p, arcname=p.name)
     aes = derive(get_salt(salt_file))
     Path(out_file).parent.mkdir(parents=True, exist_ok=True)
-    Path(out_file).write_bytes(seal(aes, buf.getvalue()))
-    print(f"Packed state into {out_file}")
+    blob = seal(aes, buf.getvalue())
+    mb = len(blob) / 1e6
+    if mb > 95:
+        sys.exit(f"Encrypted state is {mb:.0f} MB, over GitHub's 100 MB file limit. Lower sold_days in config.yaml.")
+    Path(out_file).write_bytes(blob)
+    print(f"Packed state into {out_file} ({mb:.1f} MB)")
 
 
 def unpack(in_file, state_dir, salt_file):

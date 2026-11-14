@@ -28,8 +28,16 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 45   # hard cap so a stuck run can't keep using minutes
     steps:
+      # Cost guard: Actions and Pages are free only for public repos. If this repo is ever made
+      # private, stop instead of using paid minutes.
+      - name: Free-tier guard
+        if: github.event.repository.private
+        run: |
+          echo "::error::This repository is private. Actions minutes and Pages are only free for public repos, so the tracker will not run. Make the repo public again to resume."
+          exit 1
+
       - uses: actions/checkout@v4
 
       - name: Check password secret
@@ -111,6 +119,7 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

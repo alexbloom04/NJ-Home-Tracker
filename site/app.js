@@ -30,8 +30,8 @@
     map: null, cluster: null, charts: {},
   };
   const DEFAULT_F = () => ({
-    st: 'all', towns: new Set(S.defaultTowns), scMin: '', scMax: '', scKeepUnknown: true, lpMin: '', lpMax: '',
-    spMin: '', spMax: '', sdFrom: '', bedsMin: '', bathsMin: '', sqftMin: '', domMax: '', type: '',
+    st: 'all', towns: new Set(S.defaultTowns), scMin: '', scMax: '', scKeepUnknown: true,
+    lpMin: '600000', lpMax: '850000', spMin: '600000', spMax: '999999', sdFrom: '', bedsMin: '', bathsMin: '', sqftMin: '', domMax: '', type: '',
   });
   let F = DEFAULT_F();
 
@@ -261,10 +261,14 @@
       if (F.scMin && h.sc < +F.scMin) return false;
       if (F.scMax && h.sc > +F.scMax) return false;
     }
-    if (F.lpMin && !(h.lp >= +F.lpMin)) return false;
-    if (F.lpMax && !(h.lp <= +F.lpMax)) return false;
-    if (F.spMin && !(h.sp >= +F.spMin)) return false;
-    if (F.spMax && !(h.sp <= +F.spMax)) return false;
+    // List price range applies to available and under-contract homes; sold price range to sold homes
+    if (h.st === 'S') {
+      if (F.spMin && !(h.sp >= +F.spMin)) return false;
+      if (F.spMax && !(h.sp <= +F.spMax)) return false;
+    } else {
+      if (F.lpMin && !(h.lp >= +F.lpMin)) return false;
+      if (F.lpMax && !(h.lp <= +F.lpMax)) return false;
+    }
     if (F.sdFrom && !((h.sd || '') >= F.sdFrom)) return false;
     if (F.bedsMin && !(h.beds >= +F.bedsMin)) return false;
     if (F.bathsMin && !(h.baths >= +F.bathsMin)) return false;
@@ -274,6 +278,7 @@
     return true;
   }
 
+  const PRICE_FIELDS = ['lpMin', 'lpMax', 'spMin', 'spMax'];
   const FIELDS = ['scMin', 'scMax', 'lpMin', 'lpMax', 'spMin', 'spMax', 'sdFrom', 'bedsMin', 'bathsMin', 'sqftMin', 'domMax'];
 
   const isDefaultTowns = () => F.towns.size === S.defaultTowns.size && [...F.towns].every((k) => S.defaultTowns.has(k));
@@ -284,7 +289,9 @@
     if (F.st !== 'all') p.set('st', F.st);
     // No "towns" in the link = your default towns; "towns=all" = every town
     if (!isDefaultTowns()) p.set('towns', F.towns.size ? [...F.towns].join(';') : 'all');
-    FIELDS.forEach((k) => F[k] && p.set(k, F[k]));
+    // Only store fields that differ from the defaults (an empty value means "cleared")
+    const D = DEFAULT_F();
+    FIELDS.forEach((k) => F[k] !== D[k] && p.set(k, F[k]));
     if (!F.scKeepUnknown) p.set('scKeep', '0');
     if (F.type) p.set('type', F.type);
     if (S.sort !== 'recent') p.set('sort', S.sort);
@@ -298,7 +305,7 @@
     if (p.get('st')) F.st = p.get('st');
     if (p.get('towns') === 'all') F.towns = new Set();
     else if (p.get('towns')) F.towns = new Set(p.get('towns').split(';'));
-    FIELDS.forEach((k) => p.get(k) && (F[k] = p.get(k)));
+    FIELDS.forEach((k) => p.has(k) && (F[k] = p.get(k)));
     F.scKeepUnknown = p.get('scKeep') !== '0';
     F.type = p.get('type') || '';
     S.sort = p.get('sort') || 'recent';
@@ -384,6 +391,13 @@
       const b = e.target.closest('[data-towns]');
       if (b) {
         F.towns = b.dataset.towns === 'my' ? new Set(S.defaultTowns) : new Set();
+        changed();
+        return;
+      }
+      const pb = e.target.closest('[data-prices]');
+      if (pb) {
+        const D = DEFAULT_F();
+        PRICE_FIELDS.forEach((k) => (F[k] = pb.dataset.prices === 'my' ? D[k] : ''));
         changed();
       }
     });
@@ -488,12 +502,24 @@
     const list = [...groups].sort((a, b) => a[1].name.localeCompare(b[1].name));
     const mine = isDefaultTowns();
     const label = !F.towns.size ? 'Showing all towns' : `${mine ? 'My towns' : 'Selected towns'} (${list.length})`;
-    bar.innerHTML = `<span class="tb-label">${label}</span>
+    const range = (a, b) => (a && b ? `${money(+a)}–${money(+b)}` : a ? `${money(+a)} and up` : b ? `up to ${money(+b)}` : null);
+    const lpR = range(F.lpMin, F.lpMax);
+    const spR = range(F.spMin, F.spMax);
+    const prices = [lpR && `Available &amp; under contract <b>${lpR}</b>`, spR && `Sold <b>${spR}</b>`].filter(Boolean);
+    const D = DEFAULT_F();
+    const myPrices = PRICE_FIELDS.every((k) => F[k] === D[k]);
+    bar.innerHTML = `<div class="tb-row"><span class="tb-label">${label}</span>
       ${list.map(([g, v]) => `<span class="tchip" title="${esc(v.cities.join(', '))}">${esc(v.name)}<button data-rm-town="${esc(g)}" aria-label="Remove ${esc(v.name)}" title="Remove ${esc(v.name)}">×</button></span>`).join('')}
       <span class="tb-actions">
         ${mine ? '' : '<button class="link" data-towns="my">Use my towns</button>'}
         ${F.towns.size ? '<button class="link" data-towns="all">Show all towns</button>' : ''}
-      </span>`;
+      </span></div>
+      <div class="tb-row"><span class="tb-label">Prices</span>
+      <span class="tb-prices">${prices.length ? prices.join(' · ') : 'Any price'}</span>
+      <span class="tb-actions">
+        ${myPrices ? '' : '<button class="link" data-prices="my">Use my prices</button>'}
+        ${prices.length ? '<button class="link" data-prices="any">Any price</button>' : ''}
+      </span></div>`;
   }
 
   function renderKPIs() {

@@ -147,10 +147,13 @@ def main():
                     event("new", h, d=h["ld"])
                 elif h["st"] == "S" and (h["sd"] or "") >= new_cut:
                     event("sold", h, sp=h["sp"], d=h["sd"])
+            # First time the tracker sees this home: only announce it if it actually just happened
             elif h["st"] == "A":
-                event("new", h)
+                if not h["ld"] or h["ld"] >= new_cut:
+                    event("new", h)
             elif h["st"] == "P":
-                event("pending", h)
+                if not h["pd"] or h["pd"] >= new_cut:
+                    event("pending", h)
             elif h["st"] == "S" and (h["sd"] or "") >= new_cut:
                 event("sold", h, sp=h["sp"])
         else:
@@ -193,7 +196,9 @@ def main():
         d = schools.match(h["city"], h["county"])
         ph = s["ph"]
         drop = (ph[0][1] - h["lp"]) if h["st"] == "A" and len(ph) > 1 and h["lp"] else None
-        is_new = h["st"] == "A" and ((h["ld"] or "") >= new_cut or (not s.get("fi") and s["fs"] >= new_cut))
+        # Trust the listing date; "first seen by the tracker" only counts when there is no listing date
+        # (otherwise every home from a newly added county looks new for a week).
+        is_new = h["st"] == "A" and (h["ld"] >= new_cut if h["ld"] else (not s.get("fi") and s["fs"] >= new_cut))
         listings.append({
             "id": h["id"], "st": h["st"], "sub": h["sub"], "addr": h["addr"], "unit": h["unit"],
             "city": h["city"], "zip": h["zip"], "county": h["county"], "lat": h["lat"], "lng": h["lng"],

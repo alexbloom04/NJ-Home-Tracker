@@ -202,6 +202,10 @@
     const cut = new Date(ref - days * 864e5).toISOString().slice(0, 10);
     const when = (h) => (h.st === 'S' ? h.sd : h.st === 'P' ? h.pd : h.ld || h.fs);
     homes = homes.filter((h) => !when(h) || when(h) >= cut);
+    // "New" = listed within new_days. Older builds also flagged homes the tracker had only just
+    // started seeing, so recompute from the listing date where there is one.
+    const newCut = new Date(ref - (meta.new_days || 7) * 864e5).toISOString().slice(0, 10);
+    homes.forEach((h) => { if (h.st === 'A' && h.ld) h.new = h.ld >= newCut ? 1 : 0; });
     Object.assign(S, { homes, towns, changes, history, meta });
     homes.forEach((h) => { h.img = safeUrl(h.img); S.byId.set(h.id, h); });
     changes.forEach((e) => { e.img = safeUrl(e.img); });

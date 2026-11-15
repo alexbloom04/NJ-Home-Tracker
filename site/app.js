@@ -22,6 +22,9 @@
   const MY_TOWN_NAME = new Map();
   MY_TOWNS.forEach((t) => { if (!MY_TOWN_NAME.has(townGroup(t))) MY_TOWN_NAME.set(townGroup(t), t); });
 
+  // Property types selected by default; the others stay available to add
+  const DEFAULT_TYPES = ['SINGLE_FAMILY', 'MULTI_FAMILY', 'DUPLEX_TRIPLEX'];
+
   const S = {
     defaultTowns: new Set(),
     homes: [], towns: [], changes: [], history: [], meta: {}, details: {}, byId: new Map(),
@@ -31,7 +34,7 @@
   };
   const DEFAULT_F = () => ({
     st: new Set(), towns: new Set(S.defaultTowns), scMin: '', scMax: '', scKeepUnknown: true,
-    lpMin: '600000', lpMax: '850000', spMin: '600000', spMax: '999999', sdFrom: '', bedsMin: '', bathsMin: '', sqftMin: '', domMax: '', type: '',
+    lpMin: '600000', lpMax: '850000', spMin: '600000', spMax: '999999', sdFrom: '', bedsMin: '', bathsMin: '', sqftMin: '', domMax: '', types: new Set(DEFAULT_TYPES),
   });
   let F = DEFAULT_F();
 
@@ -234,8 +237,13 @@
       : 'No data yet';
     $('#sampleBanner').hidden = !meta.sample;
 
-    const types = [...new Set(homes.map((h) => h.type).filter(Boolean))].sort();
-    $('#typeSel').insertAdjacentHTML('beforeend', types.map((t) => `<option value="${esc(t)}">${esc(prettyType(t))}</option>`).join(''));
+    // Type chips, most common first
+    const typeCounts = {};
+    homes.forEach((h) => h.type && (typeCounts[h.type] = (typeCounts[h.type] || 0) + 1));
+    const types = Object.keys(typeCounts).sort((a, b) => typeCounts[b] - typeCounts[a]);
+    S.typeOrder = types;
+    $('#typeChips').innerHTML = '<button data-type="all">All</button>'
+      + types.map((t) => `<button data-type="${esc(t)}">${esc(prettyType(t))}</button>`).join('');
 
     loadFavs();
     updateFavCount();
@@ -274,7 +282,7 @@
     if (F.bathsMin && !(h.baths >= +F.bathsMin)) return false;
     if (F.sqftMin && !(h.sqft >= +F.sqftMin)) return false;
     if (F.domMax && !(h.dom != null && h.dom <= +F.domMax)) return false;
-    if (F.type && h.type !== F.type) return false;
+    if (F.types.size && !F.types.has(h.type)) return false;
     return true;
   }
 
@@ -282,6 +290,7 @@
   const PRICE_FIELDS =['lpMin', 'lpMax', 'spMin', 'spMax'];
   const FIELDS = ['scMin', 'scMax', 'lpMin', 'lpMax', 'spMin', 'spMax', 'sdFrom', 'bedsMin', 'bathsMin', 'sqftMin', 'domMax'];
 
+  const isDefaultTypes = () => F.types.size === DEFAULT_TYPES.length && DEFAULT_TYPES.every((t) => F.types.has(t));
   const isDefaultTowns = () => F.towns.size === S.defaultTowns.size && [...F.towns].every((k) => S.defaultTowns.has(k));
 
   function writeHash() {
@@ -294,7 +303,7 @@
     const D = DEFAULT_F();
     FIELDS.forEach((k) => F[k] !== D[k] && p.set(k, F[k]));
     if (!F.scKeepUnknown) p.set('scKeep', '0');
-    if (F.type) p.set('type', F.type);
+    if (!isDefaultTypes()) p.set('types', F.types.size ? [...F.types].join(',') : 'all');
     if (S.sort !== 'recent') p.set('sort', S.sort);
     if (S.mode !== 'grid') p.set('mode', S.mode);
     history.replaceState(null, '', p.toString() ? '#' + p : location.pathname + location.search);
@@ -308,7 +317,9 @@
     else if (p.get('towns')) F.towns = new Set(p.get('towns').split(';'));
     FIELDS.forEach((k) => p.has(k) && (F[k] = p.get(k)));
     F.scKeepUnknown = p.get('scKeep') !== '0';
-    F.type = p.get('type') || '';
+    if (p.get('types') === 'all') F.types = new Set();
+    else if (p.get('types')) F.types = new Set(p.get('types').split(','));
+    else if (p.get('type')) F.types = new Set([p.get('type')]); // older single-type links
     S.sort = p.get('sort') || 'recent';
     S.mode = p.get('mode') || 'grid';
     S.view = p.get('view') || 'houses';
@@ -317,7 +328,11 @@
   function syncInputs() {
     FIELDS.forEach((k) => ($('#' + k).value = F[k]));
     $('#scKeepUnknown').checked = F.scKeepUnknown;
-    $('#typeSel').value = F.type;
+    $$('#typeChips button').forEach((b) => {
+      const on = b.dataset.type === 'all' ? !F.types.size : F.types.has(b.dataset.type);
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-pressed', on);
+    });
     $('#sortSel').value = S.sort;
     $$('#statusChips button').forEach((b) => {
       const on = b.dataset.st === 'all' ? !F.st.size : F.st.has(b.dataset.st);
@@ -365,7 +380,15 @@
     });
     FIELDS.forEach((k) => $('#' + k).addEventListener('input', debounce(() => { F[k] = $('#' + k).value; changed(); }, 250)));
     $('#scKeepUnknown').addEventListener('change', (e) => { F.scKeepUnknown = e.target.checked; changed(); });
-    $('#typeSel').addEventListener('change', (e) => { F.type = e.target.value; changed(); });
+    $('#typeChips').addEventListener('click', (e) => {
+      const b = e.target.closest('button');
+      if (!b) return;
+      const t = b.dataset.type;
+      if (t === 'all') F.types.clear();
+      else if (F.types.has(t)) F.types.delete(t);
+      else F.types.add(t);
+      changed();
+    });
     $('#sortSel').addEventListener('change', (e) => { S.sort = e.target.value; S.tableSort = null; changed(); });
     $$('.seg button').forEach((b) => b.addEventListener('click', () => { S.mode = b.dataset.mode; changed(); }));
     $('#townList').addEventListener('change', (e) => {
@@ -406,6 +429,12 @@
       if (pb) {
         const D = DEFAULT_F();
         PRICE_FIELDS.forEach((k) => (F[k] = pb.dataset.prices === 'my' ? D[k] : ''));
+        changed();
+        return;
+      }
+      const tb = e.target.closest('[data-types]');
+      if (tb) {
+        F.types = tb.dataset.types === 'my' ? new Set(DEFAULT_TYPES) : new Set();
         changed();
       }
     });
@@ -527,6 +556,12 @@
       <span class="tb-actions">
         ${myPrices ? '' : '<button class="link" data-prices="my">Use my prices</button>'}
         ${prices.length ? '<button class="link" data-prices="any">Any price</button>' : ''}
+      </span></div>
+      <div class="tb-row"><span class="tb-label">Home types</span>
+      <span class="tb-prices">${F.types.size ? (S.typeOrder || []).filter((t) => F.types.has(t)).map((t) => `<b>${esc(prettyType(t))}</b>`).join(', ') || 'None' : 'All types'}</span>
+      <span class="tb-actions">
+        ${isDefaultTypes() ? '' : '<button class="link" data-types="my">Use my types</button>'}
+        ${F.types.size ? '<button class="link" data-types="all">All types</button>' : ''}
       </span></div>`;
   }
 

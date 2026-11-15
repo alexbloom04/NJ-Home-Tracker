@@ -52,8 +52,14 @@
   const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
   // Listing data comes from a third party: only allow https (and inline sample data:image) URLs,
   // and percent-encode characters that could break out of a CSS url("...") or an HTML attribute.
-  const safeUrl = (u) => (typeof u === 'string' && /^(https:\/\/|data:image\/)/i.test(u.trim()) ? u.trim() : null);
-  const cssUrl = (u) => (safeUrl(u) ? `background-image:url("${safeUrl(u).replace(/["'()\\\s<>]/g, (c) => '%' + c.charCodeAt(0).toString(16).padStart(2, '0').toUpperCase())}")` : '');
+  // Realtor.com sends photo links as http://, so upgrade those to https:// instead of dropping them.
+  const safeUrl = (u) => {
+    if (typeof u !== 'string') return null;
+    const s = u.trim().replace(/^http:\/\//i, 'https://');
+    return /^(https:\/\/|data:image\/)/i.test(s) ? s : null;
+  };
+  // Single quotes: the result goes inside a double-quoted style="..." attribute.
+  const cssUrl = (u) => (safeUrl(u) ? `background-image:url('${safeUrl(u).replace(/["'()\\\s<>]/g, (c) => '%' + c.charCodeAt(0).toString(16).padStart(2, '0').toUpperCase())}')` : '');
   const fullAddr = (h) => [h.addr, h.unit && `Unit ${h.unit}`].filter(Boolean).join(' ');
 
   // ------------------------------------------------------------ data

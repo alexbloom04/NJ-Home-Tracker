@@ -95,7 +95,9 @@ def photo_url(p):
     if isinstance(p, dict):
         p = p.get("href") or p.get("url")
     p = str(p or "").strip()
-    return p if p.startswith("http") else None
+    if p.startswith("http://"):
+        p = "https://" + p[len("http://"):]  # the site only loads https images
+    return p if p.startswith("https://") else None
 
 
 def photo_list(row, limit):

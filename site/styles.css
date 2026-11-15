@@ -16,6 +16,7 @@
   --new: #6250d6;
   --down: #d03b3b;
   --up: #006300;
+  --fav: #e0336f;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 4px 16px rgba(0, 0, 0, 0.05);
 }
 @media (prefers-color-scheme: dark) {
@@ -184,6 +185,25 @@ button, input, select { font: inherit; color: inherit; }
 .sc { display: inline-block; min-width: 22px; text-align: center; padding: 0 5px; border-radius: 4px;
   background: var(--surface-2); color: var(--text); font-weight: 600; font-size: 12px; }
 .btn#loadMore { display: block; margin: 18px auto 0; }
+
+/* Favorites */
+.fav {
+  width: 32px; height: 32px; border-radius: 50%; padding: 0; cursor: pointer; flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--surface); color: var(--text-2); border: 1px solid var(--border);
+}
+.fav svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; }
+.fav:hover { color: var(--fav); }
+.fav.on { color: var(--fav); }
+.fav.on svg { fill: currentColor; }
+.card .fav { position: absolute; top: 8px; right: 8px; }
+td .fav { width: 26px; height: 26px; }
+td .fav svg { width: 15px; height: 15px; }
+.detail-head .fav { vertical-align: middle; margin-left: 6px; }
+.tab-n { color: var(--muted); font-weight: 400; }
+body.no-filters .layout { grid-template-columns: minmax(0, 1fr); }
+body.no-filters .filters, body.no-filters #filtersToggle { display: none !important; }
+#favGone .change { cursor: default; }
 
 /* Tables */
 .table-wrap { overflow: auto; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; }

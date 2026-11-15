@@ -62,6 +62,46 @@
   const cssUrl = (u) => (safeUrl(u) ? `background-image:url('${safeUrl(u).replace(/["'()\\\s<>]/g, (c) => '%' + c.charCodeAt(0).toString(16).padStart(2, '0').toUpperCase())}')` : '');
   const fullAddr = (h) => [h.addr, h.unit && `Unit ${h.unit}`].filter(Boolean).join(' ');
 
+  // ------------------------------------------------------------ favorites
+  // Saved in this browser only (localStorage), so they stay private and cost nothing.
+  // Each entry keeps the address so a saved home that drops out of the data can still be listed.
+  const FAV_STORE = 'njFavs';
+  let FAVS = {};
+  const isFav = (id) => Object.prototype.hasOwnProperty.call(FAVS, id);
+  function loadFavs() {
+    try {
+      const v = JSON.parse(localStorage.getItem(FAV_STORE) || '{}');
+      FAVS = v && typeof v === 'object' && !Array.isArray(v) ? v : {};
+    } catch { FAVS = {}; }
+  }
+  function saveFavs() {
+    try { localStorage.setItem(FAV_STORE, JSON.stringify(FAVS)); } catch { /* storage unavailable */ }
+  }
+  const HEART = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20.5l-1.3-1.2C5.6 14.7 2.5 11.9 2.5 8.4 2.5 5.6 4.7 3.5 7.4 3.5c1.6 0 3.2.8 4.1 2 .9-1.2 2.5-2 4.1-2 2.7 0 4.9 2.1 4.9 4.9 0 3.5-3.1 6.3-8.2 10.9L12 20.5z"/></svg>';
+  const favLabel = (on) => (on ? 'Remove from favorites' : 'Add to favorites');
+  const favBtn = (id) => `<button class="fav${isFav(id) ? ' on' : ''}" data-fav="${esc(id)}" aria-pressed="${isFav(id)}" aria-label="${favLabel(isFav(id))}" title="${favLabel(isFav(id))}">${HEART}</button>`;
+  function toggleFav(id) {
+    if (isFav(id)) delete FAVS[id];
+    else {
+      const h = S.byId.get(id);
+      FAVS[id] = { addr: h ? fullAddr(h) : '', city: h?.city || '', t: Date.now() };
+    }
+    saveFavs();
+    const on = isFav(id);
+    $$('[data-fav]').filter((b) => b.dataset.fav === id).forEach((b) => {
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-pressed', on);
+      b.setAttribute('aria-label', favLabel(on));
+      b.title = favLabel(on);
+    });
+    updateFavCount();
+    if (S.view === 'favorites') renderFavorites();
+  }
+  function updateFavCount() {
+    const n = Object.keys(FAVS).length;
+    $('#favCount').textContent = n ? `(${n})` : '';
+  }
+
   // ------------------------------------------------------------ data
   // Data files are AES-GCM encrypted (scripts/vault.py) when data/crypto.json exists.
   let KEY = null;
@@ -168,6 +208,8 @@
     const types = [...new Set(homes.map((h) => h.type).filter(Boolean))].sort();
     $('#typeSel').insertAdjacentHTML('beforeend', types.map((t) => `<option value="${esc(t)}">${esc(prettyType(t))}</option>`).join(''));
 
+    loadFavs();
+    updateFavCount();
     readHash();
     buildTownList();
     bindUI();
@@ -321,6 +363,12 @@
       renderChanges();
     });
     document.addEventListener('click', (e) => {
+      const fb = e.target.closest('[data-fav]');
+      if (fb) {
+        e.preventDefault();
+        toggleFav(fb.dataset.fav);
+        return;
+      }
       const el = e.target.closest('[data-id]');
       if (el && !e.target.closest('dialog')) {
         e.preventDefault();
@@ -354,12 +402,27 @@
     S.filtered = S.homes.filter((h) => matches(h));
     $$('.tabs button').forEach((b) => b.classList.toggle('active', b.dataset.view === S.view));
     $$('.view').forEach((v) => (v.hidden = v.id !== 'view-' + S.view));
+    document.body.classList.toggle('no-filters', S.view === 'favorites');
     renderKPIs();
     if (S.view === 'houses') renderHouses();
     if (S.view === 'towns') renderTowns();
     if (S.view === 'map') renderMap();
     if (S.view === 'market') renderMarket();
     if (S.view === 'changes') renderChanges();
+    if (S.view === 'favorites') renderFavorites();
+  }
+
+  function renderFavorites() {
+    const ids = Object.keys(FAVS).sort((a, b) => (FAVS[b].t || 0) - (FAVS[a].t || 0));
+    const here = ids.filter((id) => S.byId.has(id));
+    const gone = ids.filter((id) => !S.byId.has(id));
+    $('#favGrid').innerHTML = here.length
+      ? here.map((id) => cardHTML(S.byId.get(id))).join('')
+      : gone.length ? '' : '<div class="empty">No favorites yet. Tap the heart on any home to save it here.</div>';
+    $('#favGone').innerHTML = gone.length ? `
+      <div class="day">No longer in the data</div>
+      <p class="muted small">These homes dropped out of the listings (for example, sold more than ${S.meta.sold_days || 180} days ago). They'll reappear here if they come back.</p>
+      ${gone.map((id) => `<div class="change"><div><div class="what">${esc(FAVS[id].addr || 'Unknown address')}</div><div class="where">${esc(FAVS[id].city || '')}</div></div><span style="margin-left:auto">${favBtn(id)}</span></div>`).join('')}` : '';
   }
 
   function renderKPIs() {
@@ -414,6 +477,7 @@
         <div class="photo" style="${cssUrl(h.img)}">
           ${h.img ? '' : '<div class="no-photo">No photo</div>'}
           <div class="badges">${statusBadge(h)}${h.new ? '<span class="badge new">NEW</span>' : ''}${h.drop ? `<span class="badge drop">▼ ${shortMoney(h.drop)}</span>` : ''}</div>
+          ${favBtn(h.id)}
         </div>
         <div class="info">
           <div class="price">${price}</div>
@@ -425,6 +489,7 @@
   }
 
   const HOUSE_COLS = [
+    { k: 'fav', t: '♥', f: (h) => favBtn(h.id), v: (h) => (isFav(h.id) ? 1 : 0), n: 1 },
     { k: 'st', t: 'Status', f: (h) => statusBadge(h), v: (h) => h.st },
     { k: 'addr', t: 'Address', f: (h) => esc(fullAddr(h)), v: (h) => h.addr || '' },
     { k: 'city', t: 'Town', f: (h) => esc(h.city), v: (h) => h.city },
@@ -717,7 +782,7 @@
             <div>${esc(fullAddr(h))}, ${esc(h.city)}, NJ ${esc(h.zip || '')}</div>
             <div class="muted">${h.beds ?? '—'} beds · ${h.baths ?? '—'} baths · ${num(h.sqft)} sqft${h.type ? ' · ' + esc(prettyType(h.type)) : ''}</div>
           </div>
-          <div>${statusBadge(h)} ${h.new ? '<span class="badge new">NEW</span>' : ''}</div>
+          <div>${statusBadge(h)} ${h.new ? '<span class="badge new">NEW</span>' : ''} ${favBtn(h.id)}</div>
         </div>
         <div class="stats">
           ${stat('List price', money(h.lp))}

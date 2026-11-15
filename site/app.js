@@ -16,6 +16,11 @@
   ];
   const townNorm = (c) => String(c || '').toLowerCase().replace(/\s+(township|twp)\.?$/, '').trim();
   const MY_TOWN_SET = new Set(MY_TOWNS.map(townNorm));
+  // Spellings of one town grouped under one tag in the towns bar
+  const TOWN_ALIASES = { 'parsippany troy hills': 'parsippany', 'par troy hills': 'parsippany' };
+  const townGroup = (city) => TOWN_ALIASES[townNorm(city)] || townNorm(city);
+  const MY_TOWN_NAME = new Map();
+  MY_TOWNS.forEach((t) => { if (!MY_TOWN_NAME.has(townGroup(t))) MY_TOWN_NAME.set(townGroup(t), t); });
 
   const S = {
     defaultTowns: new Set(),
@@ -271,13 +276,14 @@
 
   const FIELDS = ['scMin', 'scMax', 'lpMin', 'lpMax', 'spMin', 'spMax', 'sdFrom', 'bedsMin', 'bathsMin', 'sqftMin', 'domMax'];
 
+  const isDefaultTowns = () => F.towns.size === S.defaultTowns.size && [...F.towns].every((k) => S.defaultTowns.has(k));
+
   function writeHash() {
     const p = new URLSearchParams();
     if (S.view !== 'houses') p.set('view', S.view);
     if (F.st !== 'all') p.set('st', F.st);
     // No "towns" in the link = your default towns; "towns=all" = every town
-    const isDefault = F.towns.size === S.defaultTowns.size && [...F.towns].every((k) => S.defaultTowns.has(k));
-    if (!isDefault) p.set('towns', F.towns.size ? [...F.towns].join(';') : 'all');
+    if (!isDefaultTowns()) p.set('towns', F.towns.size ? [...F.towns].join(';') : 'all');
     FIELDS.forEach((k) => F[k] && p.set(k, F[k]));
     if (!F.scKeepUnknown) p.set('scKeep', '0');
     if (F.type) p.set('type', F.type);
@@ -368,6 +374,19 @@
     });
     $('#clearTowns').addEventListener('click', () => { F.towns.clear(); changed(); });
     $('#myTowns').addEventListener('click', () => { F.towns = new Set(S.defaultTowns); changed(); });
+    $('#townBar').addEventListener('click', (e) => {
+      const rm = e.target.closest('[data-rm-town]');
+      if (rm) {
+        [...F.towns].forEach((k) => townGroup(k.split('|')[0]) === rm.dataset.rmTown && F.towns.delete(k));
+        changed();
+        return;
+      }
+      const b = e.target.closest('[data-towns]');
+      if (b) {
+        F.towns = b.dataset.towns === 'my' ? new Set(S.defaultTowns) : new Set();
+        changed();
+      }
+    });
     $('#resetFilters').addEventListener('click', () => { F = DEFAULT_F(); changed(); });
     $('#loadMore').addEventListener('click', () => { S.shown += PAGE; renderHouses(); });
     $('#filtersToggle').addEventListener('click', () => $('#filters').classList.toggle('open'));
@@ -431,6 +450,7 @@
     $$('.tabs button').forEach((b) => b.classList.toggle('active', b.dataset.view === S.view));
     $$('.view').forEach((v) => (v.hidden = v.id !== 'view-' + S.view));
     document.body.classList.toggle('no-filters', S.view === 'favorites');
+    renderTownBar();
     renderKPIs();
     if (S.view === 'houses') renderHouses();
     if (S.view === 'towns') renderTowns();
@@ -451,6 +471,29 @@
       <div class="day">No longer in the data</div>
       <p class="muted small">These homes dropped out of the listings (for example, sold more than ${S.meta.sold_days || 180} days ago). They'll reappear here if they come back.</p>
       ${gone.map((id) => `<div class="change"><div><div class="what">${esc(FAVS[id].addr || 'Unknown address')}</div><div class="where">${esc(FAVS[id].city || '')}</div></div><span style="margin-left:auto">${favBtn(id)}</span></div>`).join('')}` : '';
+  }
+
+  // Always-visible summary of the town filter, one tag per town (spelling variants grouped)
+  function renderTownBar() {
+    const bar = $('#townBar');
+    bar.hidden = S.view === 'favorites';
+    if (bar.hidden) return;
+    const groups = new Map();
+    [...F.towns].forEach((k) => {
+      const city = k.split('|')[0];
+      const g = townGroup(city);
+      if (!groups.has(g)) groups.set(g, { name: MY_TOWN_NAME.get(g) || city, cities: [] });
+      groups.get(g).cities.push(city);
+    });
+    const list = [...groups].sort((a, b) => a[1].name.localeCompare(b[1].name));
+    const mine = isDefaultTowns();
+    const label = !F.towns.size ? 'Showing all towns' : `${mine ? 'My towns' : 'Selected towns'} (${list.length})`;
+    bar.innerHTML = `<span class="tb-label">${label}</span>
+      ${list.map(([g, v]) => `<span class="tchip" title="${esc(v.cities.join(', '))}">${esc(v.name)}<button data-rm-town="${esc(g)}" aria-label="Remove ${esc(v.name)}" title="Remove ${esc(v.name)}">×</button></span>`).join('')}
+      <span class="tb-actions">
+        ${mine ? '' : '<button class="link" data-towns="my">Use my towns</button>'}
+        ${F.towns.size ? '<button class="link" data-towns="all">Show all towns</button>' : ''}
+      </span>`;
   }
 
   function renderKPIs() {

@@ -3,7 +3,7 @@
 A free daily dashboard of the housing market in central and northern New Jersey. It shows new listings, available homes, homes under contract (with list price) and sold homes (with sold price and date), broken out by town. You can filter by town, school score, list price, sold price, status, beds, baths, square footage and days on market. Each home has photos and full stats.
 
 - **Listings:** [HomeHarvest](https://github.com/ZacharyHampton/HomeHarvest), a free, open-source library that pulls listing data from Realtor.com. It's unofficial, so if Realtor.com changes its site the fetch can break until the library is updated (`pip install -U homeharvest`).
-- **School scores:** NJ Department of Education School Performance Reports (2024-25). Each district gets a 1–10 statewide percentile rank, based on the share of all students who met or exceeded expectations on the NJSLA ELA and Math tests.
+- **School scores:** NJ Department of Education School Performance Reports (2024-25). Each district gets a 1–10 statewide percentile rank, based on the share of all students who met or exceeded expectations on the NJSLA ELA and Math tests. There are also separate elementary (grades 3–5), middle (ELA 6–8, Math 6–7) and high school (grade 11 NJGPA) ranks. Towns that send students to a regional district get that district's middle or high school rank; those links are listed in `data/sending.csv`.
 - **Hosting and daily updates:** GitHub Pages and GitHub Actions, both free.
 
 ## How it works
@@ -41,7 +41,8 @@ All listing data the site serves is gzipped and encrypted with AES-256-GCM. The 
 
 - **Counties, sold lookback, "new" window:** edit `config.yaml`.
 - **Town not matched to a school district:** each run's log lists unmatched towns. Add a row to `data/town_aliases.csv` with `town,district_code` (look up codes in `data/schools.csv`).
-- **Refresh school scores** when NJ DOE publishes a new year: `node scripts/build_schools.mjs` (set `SPR_YEAR=2025-2026` to choose the year), then commit `data/schools.csv`.
+- **Refresh school scores** when NJ DOE publishes a new year: `node scripts/build_schools.mjs` (set `SPR_YEAR=2025-2026` to choose the year), then commit `data/schools.csv` and `site/schools.json`.
+- **Town sends students to a regional middle or high school:** add a row to `data/sending.csv` (`district_code,middle_code,high_code`), then rerun `node scripts/build_schools.mjs`.
 
 ## Previewing locally
 

@@ -227,6 +227,11 @@
     const newCut = new Date(ref - (meta.new_days || 7) * 864e5).toISOString().slice(0, 10);
     homes.forEach((h) => { if (h.st === 'A' && h.ld) h.new = h.ld >= newCut ? 1 : 0; });
     Object.assign(S, { homes, towns, changes, history, meta });
+    // Elementary / middle / high school scores per district (public NJ DOE data, not encrypted)
+    try {
+      const r = await fetch('schools.json', { cache: 'no-cache' });
+      if (r.ok) S.schools = await r.json();
+    } catch { /* optional */ }
     homes.forEach((h) => { h.img = safeUrl(h.img); S.byId.set(h.id, h); });
     S.defaultTowns = new Set(homes.filter((h) => MY_TOWN_SET.has(townNorm(h.city))).map(townKey));
     changes.forEach((e) => { e.img = safeUrl(e.img); });
@@ -252,6 +257,35 @@
     bindUI();
     syncInputs();
     render();
+  }
+
+  // School scores by level for a town: { e, m, h } each { score, pct, district } or null
+  const levelCache = new Map();
+  function schoolLevels(city, county) {
+    const k = `${city}|${county}`;
+    if (levelCache.has(k)) return levelCache.get(k);
+    const district = S.townInfo?.get(k)?.district;
+    const all = S.schools?.districts || {};
+    let lv = null;
+    if (district) {
+      lv = all[`${district}|${county}`];
+      if (!lv) {
+        const hits = Object.keys(all).filter((key) => key.startsWith(district + '|'));
+        if (hits.length === 1) lv = all[hits[0]];
+      }
+    }
+    levelCache.set(k, lv || null);
+    return lv || null;
+  }
+  const LEVELS = [['e', 'Elementary'], ['m', 'Middle'], ['h', 'High school']];
+  function levelBadges(h) {
+    const lv = schoolLevels(h.city, h.county);
+    if (!lv) return `<span title="School score (1–10)">School <span class="sc">${h.sc ?? '—'}</span></span>`;
+    return `<span class="lv-wrap">${LEVELS.map(([k, name]) => {
+      const x = lv[k];
+      const tip = x ? `${name}: ${x.score}/10 · ${x.district}` : `${name}: no data`;
+      return `<span class="lv" title="${esc(tip)}">${k.toUpperCase()}<span class="sc">${x?.score ?? '—'}</span></span>`;
+    }).join('')}</span>`;
   }
 
   const prettyType = (t) => String(t).toLowerCase().replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
@@ -623,7 +657,7 @@
           <div class="price">${price}</div>
           <div class="facts">${h.beds ?? '—'} bd · ${h.baths ?? '—'} ba · ${num(h.sqft)} sqft</div>
           <div class="addr" title="${esc(fullAddr(h))}">${esc(fullAddr(h))}, ${esc(h.city)}</div>
-          <div class="meta"><span>${extra}</span><span title="School score (1–10)">School <span class="sc">${h.sc ?? '—'}</span></span></div>
+          <div class="meta"><span>${extra}</span>${levelBadges(h)}</div>
         </div>
       </article>`;
   }
@@ -642,7 +676,12 @@
     { k: 'baths', t: 'Baths', n: 1, f: (h) => h.baths ?? '—' },
     { k: 'sqft', t: 'Sqft', n: 1, f: (h) => num(h.sqft) },
     { k: 'ppsf', t: '$/sqft', n: 1, f: (h) => money(ppsf(h)), v: ppsf },
-    { k: 'sc', t: 'School', n: 1, f: (h) => h.sc ?? '—' },
+    { k: 'sc', t: 'District', n: 1, f: (h) => h.sc ?? '—' },
+    ...LEVELS.map(([lk, name]) => ({
+      k: 'lv' + lk, t: { e: 'Elem', m: 'Middle', h: 'High' }[lk], n: 1,
+      f: (h) => schoolLevels(h.city, h.county)?.[lk]?.score ?? '—',
+      v: (h) => schoolLevels(h.city, h.county)?.[lk]?.score ?? null,
+    })),
     { k: 'dom', t: 'DOM', n: 1, f: (h) => h.dom ?? '—' },
   ];
 
@@ -694,7 +733,11 @@
   const TOWN_COLS = [
     { k: 'town', t: 'Town', f: (r) => `<b>${esc(r.town)}</b>` },
     { k: 'county', t: 'County', f: (r) => esc(r.county) },
-    { k: 'sc', t: 'School score', n: 1, f: (r) => (r.sc != null ? `<span class="sc" title="${esc(r.district || '')}">${r.sc}</span>` : '—') },
+    { k: 'sc', t: 'District score', n: 1, f: (r) => (r.sc != null ? `<span class="sc" title="${esc(r.district || '')}">${r.sc}</span>` : '—') },
+    ...LEVELS.map(([lk, name]) => ({
+      k: 'lv' + lk, t: { e: 'Elementary', m: 'Middle', h: 'High school' }[lk], n: 1,
+      f: (r) => (r['lv' + lk] ? `<span class="sc" title="${esc(`${name}: ${r['lv' + lk + 'd']}`)}">${r['lv' + lk]}</span>` : '—'),
+    })),
     { k: 'active', t: 'Available', n: 1, f: (r) => num(r.active) },
     { k: 'new', t: 'New', n: 1, f: (r) => num(r.new) },
     { k: 'pending', t: 'Under contract', n: 1, f: (r) => num(r.pending) },
@@ -721,8 +764,11 @@
       const act = hs.filter((h) => h.st === 'A');
       const sold = hs.filter((h) => h.st === 'S');
       const r = sold.filter((h) => h.sp && h.lp).map((h) => h.sp / h.lp);
+      const lv = schoolLevels(town, county) || {};
       return {
         key: k, town, county, sc: info.sc ?? hs[0].sc, district: info.district,
+        lve: lv.e?.score ?? null, lvm: lv.m?.score ?? null, lvh: lv.h?.score ?? null,
+        lved: lv.e?.district, lvmd: lv.m?.district, lvhd: lv.h?.district,
         active: act.length, new: hs.filter((h) => h.new).length,
         pending: hs.filter((h) => h.st === 'P').length, sold: sold.length,
         med_list: median(act.map((h) => h.lp)), med_sold: median(sold.map((h) => h.sp)),
@@ -939,8 +985,18 @@
           ${stat('HOA / month', d.hoa ? money(d.hoa) : null)}
           ${stat('Est. value', d.est ? money(d.est) : null)}
           ${stat('Assessed value', d.assessed ? money(d.assessed) : null)}
-          ${stat('School score', h.sc != null ? `${h.sc} / 10` : null)}
           ${stat('School district', d.district ? esc(d.district) : null)}
+          ${stat('District score', h.sc != null ? `${h.sc} / 10` : null)}
+          ${(() => {
+            const lv = schoolLevels(h.city, h.county);
+            if (!lv) return '';
+            return LEVELS.map(([k, name]) => {
+              const x = lv[k];
+              if (!x) return '';
+              const other = x.district !== d.district ? `<div class="k">${esc(x.district)}</div>` : '';
+              return stat({ e: 'Elementary schools', m: 'Middle school', h: 'High school' }[k], `${x.score} / 10 <span class="muted small-inline">${x.pct}% proficient</span>${other}`);
+            }).join('');
+          })()}
           ${stat('Reading / Math proficient', d.ela ? `${d.ela}% / ${d.math ?? '—'}%` : null)}
           ${stat('County', esc(h.county))}
           ${stat('MLS #', d.mls ? esc(d.mls) : null)}

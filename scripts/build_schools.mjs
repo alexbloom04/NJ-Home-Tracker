@@ -4,14 +4,25 @@
 //   node scripts/build_schools.mjs                 (downloads the latest district database)
 //   node scripts/build_schools.mjs path/to/Database_DistrictStateDetail.xlsx
 //
-// Output columns: county,district_code,district,school_year,ela_pct,math_pct,score
+// Output columns: county,district_code,district,school_year,ela_pct,math_pct,score,
+//                 elem_pct,elem_score,mid_pct,mid_score,high_pct,high_score
 //   ela_pct / math_pct = % of all students who met or exceeded expectations on NJSLA
 //   score              = 1-10 statewide percentile rank of the ELA+Math average (10 = top 10%)
+//   elem / mid / high  = the same idea per school level, each ranked among districts with that level:
+//     elementary = ELA + Math grades 3-5
+//     middle     = ELA grades 6-8 + Math grades 6-7 (grade 8 math is skipped: strong students
+//                  take Algebra I instead, which makes it look low in top districts)
+//     high       = NJGPA grade 11 ELA + Math "graduation ready" (taken by all juniors)
+//   Rates are averaged weighted by the number of test takers.
+//
+// Also writes site/schools.json for the dashboard: per district (keyed "name|county"), the
+// elementary, middle and high school scores its students get, following data/sending.csv for
+// districts that send middle or high schoolers to another (regional) district.
 //
 // Needs `tar` (built into Windows 10+, macOS, Linux) to read the xlsx zip.
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -119,11 +130,91 @@ for (const [key, e] of Object.entries(ela.out)) {
 }
 
 // Percentile rank -> 1..10
-const sorted = [...districts].sort((a, b) => a.avg - b.avg);
-sorted.forEach((d, i) => (d.score = Math.min(10, Math.floor((i / sorted.length) * 10) + 1)));
+const rank = (list, key, out) => {
+  const s = list.filter((d) => d[key] != null).sort((a, b) => a[key] - b[key]);
+  s.forEach((d, i) => (d[out] = Math.min(10, Math.floor((i / s.length) * 10) + 1)));
+};
+rank(districts, 'avg', 'score');
+
+// ---------------------------------------------------------------- per school level
+// "<10%" is reported for very low rates; "Fewer than 10 testers" means no data.
+const rate = (s) => {
+  const t = String(s ?? '').trim();
+  if (/^<\s*10/.test(t)) return 5;
+  if (/^>\s*90/.test(t)) return 95;
+  return pct(t);
+};
+const count = (s) => {
+  const n = parseFloat(String(s ?? '').replace(/,/g, ''));
+  return Number.isFinite(n) && n > 0 ? n : null;
+};
+const LEVEL_TESTS = {
+  elem: { ELA: ['Grade 3', 'Grade 4', 'Grade 5'], Math: ['Grade 3', 'Grade 4', 'Grade 5'] },
+  mid: { ELA: ['Grade 6', 'Grade 7', 'Grade 8'], Math: ['Grade 6', 'Grade 7'] },
+};
+const acc = {}; // district_code -> level -> [sum of rate*n, sum of n]
+const add = (code, level, r, n) => {
+  if (r == null || n == null) return;
+  const a = ((acc[code] ||= {})[level] ||= [0, 0]);
+  a[0] += r * n;
+  a[1] += n;
+};
+const latestRows = (sheetName) => {
+  const rows = readRows(file, sheets[sheetName], strings).filter((r) => r.StudentGroup === 'All Students');
+  const latest = rows.map((r) => r.SchoolYear).filter((y) => /^\d{4}-\d{2}$/.test(y || '')).sort().at(-1);
+  return rows.filter((r) => r.SchoolYear === latest);
+};
+for (const [subject, sheet] of [['ELA', 'ELAPerformanceByTest'], ['Math', 'MathPerformancebyTest']]) {
+  for (const r of latestRows(sheet)) {
+    const code = `${r.CountyCode}-${r.DistrictCode}`;
+    for (const [level, tests] of Object.entries(LEVEL_TESTS)) {
+      if (tests[subject].includes(r.GradeTest)) add(code, level, rate(r.ProficiencyRate_District), count(r.ValidScores_District));
+    }
+  }
+}
+for (const r of latestRows('NJGPA')) {
+  const code = `${r.CountyCode}-${r.DistrictCode}`;
+  add(code, 'high', rate(r.ELAGraduationReadyPct_District), count(r.ELAValidScores_District));
+  add(code, 'high', rate(r.MathGraduationReadyPct_District), count(r.MathValidScores_District));
+}
+for (const d of districts) {
+  for (const level of ['elem', 'mid', 'high']) {
+    const a = acc[d.district_code]?.[level];
+    d[`${level}_pct`] = a && a[1] ? Math.round((a[0] / a[1]) * 10) / 10 : null;
+  }
+}
+for (const level of ['elem', 'mid', 'high']) rank(districts, `${level}_pct`, `${level}_score`);
+
+// Districts that send middle / high schoolers elsewhere
+const byCode = Object.fromEntries(districts.map((d) => [d.district_code, d]));
+const sending = {};
+const sendFile = join(ROOT, 'data', 'sending.csv');
+if (existsSync(sendFile)) {
+  const lines = readFileSync(sendFile, 'utf8').trim().split(/\r?\n/).slice(1);
+  for (const line of lines) {
+    const [code, mid, high] = line.split(',');
+    sending[code] = { mid: mid || null, high: high || null };
+    for (const c of [mid, high]) if (c && !byCode[c]) console.warn(`sending.csv: unknown district ${c}`);
+  }
+}
+const levelInfo = (d) => {
+  const pick = (level, viaCode) => {
+    const src = (viaCode && byCode[viaCode]) || d;
+    const score = src[`${level}_score`];
+    return score == null ? null : { score, pct: src[`${level}_pct`], district: src.district };
+  };
+  const s = sending[d.district_code] || {};
+  return { e: pick('elem'), m: pick('mid', s.mid), h: pick('high', s.high) };
+};
+const siteSchools = { school_year: ela.latest, districts: {} };
+for (const d of districts) siteSchools.districts[`${d.district}|${d.county}`] = levelInfo(d);
+writeFileSync(join(ROOT, 'site', 'schools.json'), JSON.stringify(siteSchools));
 
 const esc = (v) => (v == null ? '' : /[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : String(v));
-const cols = ['county', 'district_code', 'district', 'school_year', 'ela_pct', 'math_pct', 'score'];
+const cols = ['county', 'district_code', 'district', 'school_year', 'ela_pct', 'math_pct', 'score',
+  'elem_pct', 'elem_score', 'mid_pct', 'mid_score', 'high_pct', 'high_score'];
 const csv = [cols.join(','), ...districts.sort((a, b) => a.county.localeCompare(b.county) || a.district.localeCompare(b.district)).map((d) => cols.map((c) => esc(d[c])).join(','))].join('\n');
 writeFileSync(join(ROOT, 'data', 'schools.csv'), csv + '\n');
 console.log(`Wrote data/schools.csv: ${districts.length} districts, school year ${ela.latest}`);
+const n = (l) => districts.filter((d) => d[`${l}_score`] != null).length;
+console.log(`Wrote site/schools.json: ranked ${n('elem')} elementary, ${n('mid')} middle, ${n('high')} high school districts`);

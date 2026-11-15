@@ -199,6 +199,9 @@ button, input, select { font: inherit; color: inherit; }
 .card .meta { display: flex; justify-content: space-between; color: var(--muted); font-size: 12px; margin-top: 4px; }
 .sc { display: inline-block; min-width: 22px; text-align: center; padding: 0 5px; border-radius: 4px;
   background: var(--surface-2); color: var(--text); font-weight: 600; font-size: 12px; }
+.lv-wrap { display: inline-flex; gap: 6px; }
+.lv { display: inline-flex; align-items: center; gap: 3px; }
+.small-inline { font-size: 11px; font-weight: 400; }
 .btn#loadMore { display: block; margin: 18px auto 0; }
 
 /* Favorites */

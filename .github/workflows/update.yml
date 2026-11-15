@@ -53,6 +53,9 @@ jobs:
           cache: pip
       - run: pip install -r requirements.txt
 
+      - name: Check scripts compile
+        run: python -m py_compile scripts/*.py
+
       # Encrypted state + last published (encrypted) data live on an orphan `data` branch (one commit, force-pushed)
       - name: Get saved state
         run: |

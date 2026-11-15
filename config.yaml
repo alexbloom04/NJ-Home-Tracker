@@ -17,6 +17,10 @@ state: NJ
 # How far back to pull sold homes (days)
 sold_days: 180
 
+# Only show homes whose latest status happened within this many days:
+# available = listed, under contract = went under contract, sold = sold
+recent_days: 180
+
 # A listing counts as "New" if listed within this many days
 new_days: 7
 

@@ -183,8 +183,13 @@ def main():
     if (out / "details").exists():
         shutil.rmtree(out / "details")
     listings, details = [], defaultdict(dict)
+    recent_cut = (today - timedelta(days=CFG.get("recent_days", 180))).isoformat()
     for h in homes:
         s = state[h["id"]]
+        # Only publish homes whose current status started within recent_days (unknown dates are kept)
+        when = h["sd"] if h["st"] == "S" else (h["pd"] or s["ss"]) if h["st"] == "P" else (h["ld"] or s["fs"])
+        if when and when < recent_cut:
+            continue
         d = schools.match(h["city"], h["county"])
         ph = s["ph"]
         drop = (ph[0][1] - h["lp"]) if h["st"] == "A" and len(ph) > 1 and h["lp"] else None
@@ -254,7 +259,7 @@ def main():
     dump(out / "history.json", history)
     dump(out / "meta.json", {
         "updated": t, "initial": initial, "sample": False, "counties": CFG["counties"],
-        "sold_days": CFG.get("sold_days", 180), "new_days": CFG.get("new_days", 7),
+        "sold_days": CFG.get("sold_days", 180), "recent_days": CFG.get("recent_days", 180), "new_days": CFG.get("new_days", 7),
         "counts": {k: sum(h["st"] == k for h in listings) for k in "APS"},
         "school_year": schools.districts[0]["school_year"] if schools.districts else None,
     })

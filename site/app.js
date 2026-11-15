@@ -191,17 +191,24 @@
       KEY = await unlock(cryptoMeta);
       $('#lockBtn').hidden = false;
     }
-    const [homes, towns, changes, history, meta] = await Promise.all([
+    let [homes, towns, changes, history, meta] = await Promise.all([
       getJSON('data/listings.json', []), getJSON('data/towns.json', []), getJSON('data/changes.json', []),
       getJSON('data/history.json', []), getJSON('data/meta.json', {}),
     ]);
+    // Show only homes whose current status started within recent_days (the build does this too;
+    // repeating it here applies the window to data built before that setting existed).
+    const days = meta.recent_days || 180;
+    const ref = meta.updated ? new Date(meta.updated + 'T12:00:00') : new Date();
+    const cut = new Date(ref - days * 864e5).toISOString().slice(0, 10);
+    const when = (h) => (h.st === 'S' ? h.sd : h.st === 'P' ? h.pd : h.ld || h.fs);
+    homes = homes.filter((h) => !when(h) || when(h) >= cut);
     Object.assign(S, { homes, towns, changes, history, meta });
     homes.forEach((h) => { h.img = safeUrl(h.img); S.byId.set(h.id, h); });
     changes.forEach((e) => { e.img = safeUrl(e.img); });
     S.townInfo = new Map(towns.map((t) => [`${t.town}|${t.county}`, t]));
 
     $('#updated').textContent = meta.updated
-      ? `Updated ${date(meta.updated)} · ${num(homes.length)} homes · ${(meta.counties || []).length} counties`
+      ? `Updated ${date(meta.updated)} · ${num(homes.length)} homes from the last ${Math.round(days / 30)} months · ${(meta.counties || []).length} counties`
       : 'No data yet';
     $('#sampleBanner').hidden = !meta.sample;
 

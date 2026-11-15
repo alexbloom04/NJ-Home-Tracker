@@ -150,6 +150,7 @@ button, input, select { font: inherit; color: inherit; }
 .town-list .county button { font-size: 11px; text-transform: none; letter-spacing: 0; font-weight: 400; }
 .town-list label { display: flex; gap: 6px; align-items: center; padding: 2px 8px; font-size: 13px; cursor: pointer; }
 .town-list label:hover { background: var(--surface-2); }
+.town-actions { display: flex; gap: 14px; }
 .town-list label .n { margin-left: auto; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
 
 /* Toolbar */

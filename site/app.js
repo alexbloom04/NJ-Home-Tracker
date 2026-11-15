@@ -6,14 +6,26 @@
   const $$ = (s, el = document) => [...el.querySelectorAll(s)];
   const PAGE = 60;
 
+  // Towns selected by default. Other towns stay in the list to add. Names are matched ignoring case
+  // and a trailing "Twp"/"Township", so "Warren" also covers "Warren Twp".
+  const MY_TOWNS = [
+    'Short Hills', 'Millburn', 'Scotch Plains', 'Summit', 'New Providence', 'Chatham', 'Madison',
+    'Florham Park', 'Berkeley Heights', 'Stirling', 'Watchung', 'Warren', 'Basking Ridge', 'Bernards',
+    'Bernardsville', 'Cedar Knolls', 'Whippany', 'Morris Plains', 'Parsippany', 'Parsippany Troy Hills',
+    'Par Troy Hills', 'East Hanover', 'Hanover', 'Livingston', 'Fairfield',
+  ];
+  const townNorm = (c) => String(c || '').toLowerCase().replace(/\s+(township|twp)\.?$/, '').trim();
+  const MY_TOWN_SET = new Set(MY_TOWNS.map(townNorm));
+
   const S = {
+    defaultTowns: new Set(),
     homes: [], towns: [], changes: [], history: [], meta: {}, details: {}, byId: new Map(),
     filtered: [], view: 'houses', mode: 'grid', shown: PAGE, sort: 'recent',
     tableSort: null, townSort: { key: 'active', dir: -1 }, changeType: 'all',
     map: null, cluster: null, charts: {},
   };
   const DEFAULT_F = () => ({
-    st: 'all', towns: new Set(), scMin: '', scMax: '', scKeepUnknown: true, lpMin: '', lpMax: '',
+    st: 'all', towns: new Set(S.defaultTowns), scMin: '', scMax: '', scKeepUnknown: true, lpMin: '', lpMax: '',
     spMin: '', spMax: '', sdFrom: '', bedsMin: '', bathsMin: '', sqftMin: '', domMax: '', type: '',
   });
   let F = DEFAULT_F();
@@ -208,6 +220,7 @@
     homes.forEach((h) => { if (h.st === 'A' && h.ld) h.new = h.ld >= newCut ? 1 : 0; });
     Object.assign(S, { homes, towns, changes, history, meta });
     homes.forEach((h) => { h.img = safeUrl(h.img); S.byId.set(h.id, h); });
+    S.defaultTowns = new Set(homes.filter((h) => MY_TOWN_SET.has(townNorm(h.city))).map(townKey));
     changes.forEach((e) => { e.img = safeUrl(e.img); });
     S.townInfo = new Map(towns.map((t) => [`${t.town}|${t.county}`, t]));
 
@@ -262,7 +275,9 @@
     const p = new URLSearchParams();
     if (S.view !== 'houses') p.set('view', S.view);
     if (F.st !== 'all') p.set('st', F.st);
-    if (F.towns.size) p.set('towns', [...F.towns].join(';'));
+    // No "towns" in the link = your default towns; "towns=all" = every town
+    const isDefault = F.towns.size === S.defaultTowns.size && [...F.towns].every((k) => S.defaultTowns.has(k));
+    if (!isDefault) p.set('towns', F.towns.size ? [...F.towns].join(';') : 'all');
     FIELDS.forEach((k) => F[k] && p.set(k, F[k]));
     if (!F.scKeepUnknown) p.set('scKeep', '0');
     if (F.type) p.set('type', F.type);
@@ -275,7 +290,8 @@
     const p = new URLSearchParams(location.hash.slice(1));
     F = DEFAULT_F();
     if (p.get('st')) F.st = p.get('st');
-    if (p.get('towns')) F.towns = new Set(p.get('towns').split(';'));
+    if (p.get('towns') === 'all') F.towns = new Set();
+    else if (p.get('towns')) F.towns = new Set(p.get('towns').split(';'));
     FIELDS.forEach((k) => p.get(k) && (F[k] = p.get(k)));
     F.scKeepUnknown = p.get('scKeep') !== '0';
     F.type = p.get('type') || '';
@@ -351,6 +367,7 @@
       $$('#townList .county-group').forEach((g) => (g.hidden = !$$('label:not([hidden])', g).length));
     });
     $('#clearTowns').addEventListener('click', () => { F.towns.clear(); changed(); });
+    $('#myTowns').addEventListener('click', () => { F.towns = new Set(S.defaultTowns); changed(); });
     $('#resetFilters').addEventListener('click', () => { F = DEFAULT_F(); changed(); });
     $('#loadMore').addEventListener('click', () => { S.shown += PAGE; renderHouses(); });
     $('#filtersToggle').addEventListener('click', () => $('#filters').classList.toggle('open'));

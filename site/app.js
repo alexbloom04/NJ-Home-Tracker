@@ -30,7 +30,7 @@
     map: null, cluster: null, charts: {},
   };
   const DEFAULT_F = () => ({
-    st: 'all', towns: new Set(S.defaultTowns), scMin: '', scMax: '', scKeepUnknown: true,
+    st: new Set(), towns: new Set(S.defaultTowns), scMin: '', scMax: '', scKeepUnknown: true,
     lpMin: '600000', lpMax: '850000', spMin: '600000', spMax: '999999', sdFrom: '', bedsMin: '', bathsMin: '', sqftMin: '', domMax: '', type: '',
   });
   let F = DEFAULT_F();
@@ -251,8 +251,8 @@
   // ------------------------------------------------------------ filters
   function matches(h, ignoreTown = false, ignoreStatus = false) {
     if (!ignoreStatus) {
-      if (F.st === 'new' && !h.new) return false;
-      if ('APS'.includes(F.st) && F.st.length === 1 && h.st !== F.st) return false;
+      // Statuses are multi-select: a home shows if it matches any selected one (none selected = all)
+      if (F.st.size && !(F.st.has(h.st) || (F.st.has('new') && h.new))) return false;
     }
     if (!ignoreTown && F.towns.size && !F.towns.has(townKey(h))) return false;
     if (h.sc == null) {
@@ -278,7 +278,8 @@
     return true;
   }
 
-  const PRICE_FIELDS = ['lpMin', 'lpMax', 'spMin', 'spMax'];
+  const STATUS_KEYS = ['new', 'A', 'P', 'S'];
+  const PRICE_FIELDS =['lpMin', 'lpMax', 'spMin', 'spMax'];
   const FIELDS = ['scMin', 'scMax', 'lpMin', 'lpMax', 'spMin', 'spMax', 'sdFrom', 'bedsMin', 'bathsMin', 'sqftMin', 'domMax'];
 
   const isDefaultTowns = () => F.towns.size === S.defaultTowns.size && [...F.towns].every((k) => S.defaultTowns.has(k));
@@ -286,7 +287,7 @@
   function writeHash() {
     const p = new URLSearchParams();
     if (S.view !== 'houses') p.set('view', S.view);
-    if (F.st !== 'all') p.set('st', F.st);
+    if (F.st.size) p.set('st', [...F.st].join(','));
     // No "towns" in the link = your default towns; "towns=all" = every town
     if (!isDefaultTowns()) p.set('towns', F.towns.size ? [...F.towns].join(';') : 'all');
     // Only store fields that differ from the defaults (an empty value means "cleared")
@@ -302,7 +303,7 @@
   function readHash() {
     const p = new URLSearchParams(location.hash.slice(1));
     F = DEFAULT_F();
-    if (p.get('st')) F.st = p.get('st');
+    if (p.get('st')) F.st = new Set(p.get('st').split(',').filter((s) => STATUS_KEYS.includes(s)));
     if (p.get('towns') === 'all') F.towns = new Set();
     else if (p.get('towns')) F.towns = new Set(p.get('towns').split(';'));
     FIELDS.forEach((k) => p.has(k) && (F[k] = p.get(k)));
@@ -318,7 +319,11 @@
     $('#scKeepUnknown').checked = F.scKeepUnknown;
     $('#typeSel').value = F.type;
     $('#sortSel').value = S.sort;
-    $$('#statusChips button').forEach((b) => b.classList.toggle('active', b.dataset.st === F.st));
+    $$('#statusChips button').forEach((b) => {
+      const on = b.dataset.st === 'all' ? !F.st.size : F.st.has(b.dataset.st);
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-pressed', on);
+    });
     $$('.seg button').forEach((b) => b.classList.toggle('active', b.dataset.mode === S.mode));
     $$('#townList input').forEach((i) => (i.checked = F.towns.has(i.value)));
     updateTownCount();
@@ -352,7 +357,10 @@
     $('#statusChips').addEventListener('click', (e) => {
       const b = e.target.closest('button');
       if (!b) return;
-      F.st = b.dataset.st;
+      const s = b.dataset.st;
+      if (s === 'all') F.st.clear();
+      else if (F.st.has(s)) F.st.delete(s);
+      else F.st.add(s);
       changed();
     });
     FIELDS.forEach((k) => $('#' + k).addEventListener('input', debounce(() => { F[k] = $('#' + k).value; changed(); }, 250)));
@@ -412,7 +420,7 @@
     $('#kpis').addEventListener('click', (e) => {
       const k = e.target.closest('.kpi[data-st]');
       if (!k) return;
-      F.st = k.dataset.st;
+      F.st = new Set([k.dataset.st]);
       setView('houses');
       changed();
     });
